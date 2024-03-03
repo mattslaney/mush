@@ -444,6 +444,13 @@ pub mod config {
         io::{BufRead, BufReader},
     };
 
+    pub fn exists() -> bool {
+        match get_cfg() {
+            Ok(_) => true,
+            Err(_) => false
+        }
+    }
+
     #[derive(Serialize, Deserialize, Debug)]
     pub struct Config {
         pub core: CoreConfig,

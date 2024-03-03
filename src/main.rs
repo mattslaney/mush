@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::process;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -83,10 +83,14 @@ fn main() -> Result<(), Box<dyn Error>> {
             mush::setup::src_delete().expect("Failed to delete sync config");
         }
         None => {
-            println!("Running sync");
-            if let Err(e) = mush::sync::run() {
-                eprintln!("Failed to execute sync: {e}");
-                process::exit(1);
+            if mush::config::exists() {
+                println!("Running sync");
+                if let Err(e) = mush::sync::run() {
+                    eprintln!("Failed to execute sync: {e}");
+                    process::exit(1);
+                }
+            } else {
+                Cli::command().print_help()?;
             }
         }
     }{}
