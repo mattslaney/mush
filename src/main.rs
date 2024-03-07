@@ -28,13 +28,24 @@ enum Commands {
 
         ///Will clear out the object cache
         #[arg(long)]
-        clear_cache: bool
+        clear_cache: bool,
     },
+    /// Show the changes that need to be synced
     Status,
-    List,
-    Push,
+    /// Show a tree of all files
+    Tree,
+    /// Push all files up to the destination
+    Push {
+        #[arg(long)]
+        force: bool,
+    },
+    /// Pull all files down from the destination
+    Pull {
+        #[arg(long)]
+        force: bool,
+    },
     Config {
-        dst: Option<String>
+        dst: Option<String>,
     },
     Delete,
 }
@@ -43,7 +54,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
     match &cli.command {
-        Some(Commands::Init { dst, gitignore, clear_cache }) => {
+        Some(Commands::Init {
+            dst,
+            gitignore,
+            clear_cache,
+        }) => {
             if *clear_cache {
                 if let Err(e) = mush::setup::src_clear_cache() {
                     eprintln!("Failed to clear the cache: {e}");
@@ -62,21 +77,29 @@ fn main() -> Result<(), Box<dyn Error>> {
                 eprint!("Failed to get status: {e}");
             }
         }
-        Some(Commands::List) => {
-            println!("Listing changes");
-            mush::sync::list().expect("Failed to sync list");
+        Some(Commands::Tree) => {
+            println!("Tree");
+            mush::sync::tree().expect("Failed to show tree");
         }
-        Some(Commands::Push) => {
-            mush::sync::push().expect("Failed to push changes to destination");
+        Some(Commands::Push { force }) => {
+            mush::sync::push(force).expect("Failed to push changes to destination");
         }
-        Some(Commands::Config {dst}) => {
+        Some(Commands::Pull { force }) => {
+            mush::sync::push(force).expect("Failed to pull changes to destination");
+        }
+        Some(Commands::Config { dst }) => {
             match dst {
                 Some(v) => {
                     if let Err(e) = mush::config::cfg_set_dst(v.to_string()) {
                         eprintln!("Could not set destination {v}: {:#?}", e);
                     }
-                },
-                None => ()
+                }
+                None => {
+                    println!(
+                        "{}",
+                        mush::config::get_cfg_dst_dir().expect("Could not get dest")
+                    );
+                }
             };
         }
         Some(Commands::Delete) => {
@@ -93,6 +116,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Cli::command().print_help()?;
             }
         }
-    }{}
+    }
+    {}
     Ok(())
 }

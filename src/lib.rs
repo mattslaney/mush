@@ -1,5 +1,5 @@
 pub mod sync {
-    use crate::filesystem::{*};
+    use crate::filesystem::*;
     use std::error::Error;
     use std::path::PathBuf;
 
@@ -26,8 +26,10 @@ pub mod sync {
         Ok(())
     }
 
-    pub fn list() -> Result<(), Box<dyn Error>> {
-
+    pub fn tree() -> Result<(), Box<dyn Error>> {
+        let src_dir = crate::config::get_cfg_src_dir().unwrap();
+        let ignore_file = crate::config::get_ignore_file().unwrap().unwrap();
+        let files = crate::filesystem::print_tree(src_dir, &ignore_file, String::from(""));
         Ok(())
     }
 
@@ -69,8 +71,11 @@ pub mod sync {
         Ok(())
     }
 
-    pub fn push() -> Result<(), Box<dyn Error>> {
+    pub fn push(force: &bool) -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
 
+    pub fn pull(force: &bool) -> Result<(), Box<dyn Error>> {
         Ok(())
     }
 }
@@ -99,6 +104,50 @@ mod filesystem {
         created: String,
         modified: String,
         checksum: String,
+    }
+
+    pub fn print_tree(src_dir: String, ignore_file: &String, prefix: String) {
+        let mut builder = WalkBuilder::new(&src_dir);
+        builder.hidden(false);
+        builder.ignore(false);
+        builder.parents(false);
+        builder.git_global(false);
+        builder.git_ignore(false);
+        builder.git_exclude(false);
+        builder.require_git(false);
+        builder.follow_links(false);
+        builder.add_custom_ignore_filename(ignore_file);
+        builder.max_depth(Some(1));
+        let items: Vec<_> = builder.build().collect();
+        let mut index = items.len();
+        for item in items {
+            let dir: DirEntry = item.unwrap();
+            let pb: PathBuf = dir.into_path();
+            index -= 1;
+            if String::from(pb.to_str().unwrap()) == src_dir {
+                continue;
+            }
+            if index == 0 {
+                println!("{}└── {}", prefix, pb.file_name().unwrap().to_str().unwrap());
+                if pb.is_dir() {
+                    print_tree(
+                        String::from(pb.to_str().unwrap()),
+                        ignore_file,
+                        format!("{}    ", prefix)
+                    );
+                }
+            } else {
+                println!("{}├── {}", prefix, pb.file_name().unwrap().to_str().unwrap());
+                if pb.is_dir() {
+                    print_tree(
+                        String::from(pb.to_str().unwrap()),
+                        ignore_file,
+                        format!("{}│   ", prefix)
+                    );
+                } else {
+                }
+            }
+        }
     }
 
     fn get_all_files() -> Vec<PathBuf> {
@@ -142,7 +191,8 @@ mod filesystem {
             .unwrap()
             .as_os_str()
             .to_str()
-            .unwrap().to_string()
+            .unwrap()
+            .to_string()
     }
 
     fn get_src_rel_path_hash(path: &Path) -> u64 {
@@ -447,7 +497,7 @@ pub mod config {
     pub fn exists() -> bool {
         match get_cfg() {
             Ok(_) => true,
-            Err(_) => false
+            Err(_) => false,
         }
     }
 
