@@ -29,8 +29,10 @@ enum Commands {
     Push {
         #[arg(short, long, value_name = "MANIFEST_FILE", default_value = "manifest.mush")]
         manifest: String,
-        #[arg(short, long)]
-        mode: MushMode
+        #[arg(long)]
+        copy: bool,
+        #[arg(long)]
+        move_: bool
     }
 }
 
@@ -41,8 +43,17 @@ fn main() {
         Some(Commands::Scan { src, dst, manifest }) => {
             scan(src, dst, manifest);
         }
-        Some(Commands::Push { manifest, mode }) => {
-            push(manifest, mode);
+        Some(Commands::Push { manifest, copy, move_ }) => {
+            if copy && move_ {
+                panic!("Cannot copy and move at the same time");
+            }
+
+            if copy {
+                push(&manifest, MushMode::Copy);
+            }
+            if move_ {
+                push(&manifest, MushMode::Move);
+            }
         }
         None => {}
     }
