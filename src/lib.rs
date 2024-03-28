@@ -76,6 +76,13 @@ pub struct MushLink {
     hash: String,
     src: String,
     dst: String,
+    duplicate_count: Option<u8>
+}
+
+impl std::fmt::Display for MushLink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{},{},{},{}", self.action.to_string(), self.hash, self.src, self.dst)
+    }
 }
 
 fn write_to_manifest(
@@ -97,7 +104,7 @@ fn write_to_manifest(
     }
 }
 
-pub fn scan(src: Vec<String>, dst: String, manifest: Manifest) -> HashMap<String, MushLink> {
+pub fn scan(src: Vec<String>, dst: String, mut manifest: Manifest) -> Manifest { //Note: borrow manifest in future to mutate in place
     let mut mushmap: HashMap<String, MushLink> = HashMap::new();
 
     match manifest {
@@ -143,53 +150,79 @@ pub fn scan(src: Vec<String>, dst: String, manifest: Manifest) -> HashMap<String
 
                 if mushmap.contains_key(&hash) {
                     print!("Possible duplicate: ");
-                    let orig = mushmap.get(&hash).unwrap();
+                    if let Some(orig) = mushmap.get_mut(&hash) {
 
-                    //Get orig created date & modified date
-                    let orig_metadata = std::fs::metadata(&orig.src).unwrap();
-                    let _orig_created = orig_metadata.created().unwrap();
-                    let _orig_modified = orig_metadata.modified().unwrap();
+                        //Get orig created date & modified date
+                        let orig_metadata = std::fs::metadata(&orig.src).unwrap();
+                        let _orig_created = orig_metadata.created().unwrap();
+                        let _orig_modified = orig_metadata.modified().unwrap();
 
-                    //Do a bit by bit file comparison
-                    let dup_file = std::path::PathBuf::from(&src_file);
-                    if compare_files(&src_file, &dup_file) {
-                        println!(
-                            "{}: {} (same as {})",
-                            style!("yellow", "{}", "Skipped"),
-                            src_path_string,
-                            orig.src
-                        );
-                        match manifest {
-                            Manifest::File(ref file) => {
-                                write_to_manifest(
-                                    MushAction::Skip,
-                                    &hash[..],
-                                    &src_path_string[..],
-                                    &orig.dst[..],
-                                    &file,
-                                );
+                        //Do a bit by bit file comparison
+                        let dup_file = std::path::PathBuf::from(&src_file);
+                        if compare_files(&src_file, &dup_file) {
+                            println!(
+                                "{}: {} (same as {})",
+                                yellow!("Skipped"),
+                                src_path_string,
+                                orig.src
+                            );
+                            if let Some(c) = orig.duplicate_count {
+                                orig.duplicate_count = Some(c+1);
                             }
-                            Manifest::Map(_) => {
-                                todo!("Might change manifest to vec instead of map - can warn user of skipped files");
+                            let hash = format!("{}[d{}]", hash, orig.duplicate_count.unwrap());
+                            let mushlink = MushLink {
+                                action: MushAction::Skip,
+                                hash: hash.to_owned(),
+                                src: src_path_string.to_owned(),
+                                dst: orig.dst.to_owned(),
+                                duplicate_count: None
+                            };
+                            println!("{}", style!("magenta", "{}", hash));
+                            match manifest {
+                                Manifest::File(ref file) => {
+                                    write_to_manifest(
+                                        MushAction::Skip,
+                                        &hash[..],
+                                        &src_path_string[..],
+                                        &orig.dst[..],
+                                        &file,
+                                    );
+                                }
+                                Manifest::Map(ref mut map) => {
+                                    map.insert(hash, mushlink);
+                                }
+                            }
+                        } else {
+                            let s_path = style!("yellow", "{}/{}", src_parent_dir, src_file_name);
+                            println!("Collision detected: {} {})", s_path, orig.src);
+                            if let Some(c) = orig.duplicate_count {
+                                orig.duplicate_count = Some(c+1);
+                            }
+                            let mushlink = MushLink {
+                                action: MushAction::Collision,
+                                hash: hash.to_owned(),
+                                src: src_path_string.to_owned(),
+                                dst: orig.dst.to_owned(),
+                                duplicate_count: None
+                            };
+                            let hash = format!("{}[c{}]", hash, orig.duplicate_count.unwrap());
+                            match manifest {
+                                Manifest::File(ref file) => {
+                                    write_to_manifest(
+                                        MushAction::Collision,
+                                        &hash[..],
+                                        &src_path_string[..],
+                                        &orig.dst[..],
+                                        &file,
+                                    );
+                                }
+                                Manifest::Map(ref mut map) => {
+                                    map.insert(format!("{}[{}]", hash, orig.duplicate_count.unwrap()), mushlink);
+                                }
                             }
                         }
                     } else {
-                        let s_path = style!("yellow", "{}/{}", src_parent_dir, src_file_name);
-                        println!("Collision detected: {} {})", s_path, orig.src);
-                        match manifest {
-                            Manifest::File(ref file) => {
-                                write_to_manifest(
-                                    MushAction::Collision,
-                                    &hash[..],
-                                    &src_path_string[..],
-                                    &orig.dst[..],
-                                    &file,
-                                );
-                            }
-                            Manifest::Map(_) => {
-                                todo!("Might change manifest to vec instead of map - can prompt user for collisions");
-                            }
-                        }
+                        error!("Failed to get original link for {}", src_path_string);
                     }
                 } else {
                     let dst_path_string =
@@ -203,6 +236,7 @@ pub fn scan(src: Vec<String>, dst: String, manifest: Manifest) -> HashMap<String
                         hash: hash.to_owned(),
                         src: src_path_string.to_owned(),
                         dst: dst_path_string.to_owned(),
+                        duplicate_count: Some(0)
                     };
 
                     match manifest {
@@ -215,9 +249,9 @@ pub fn scan(src: Vec<String>, dst: String, manifest: Manifest) -> HashMap<String
                                     file
                             );
                         }
-                        Manifest::Map(mut map) => {
+                        Manifest::Map(ref mut map) => {
                             map.insert(hash.to_owned(), mushlink.clone());
-                            todo!("Might change manifest to vec instead of map - can warn user of skipped files");
+                            //todo!("Might change manifest to vec instead of map - can warn user of skipped files");
                         }
                     }
 
@@ -227,7 +261,7 @@ pub fn scan(src: Vec<String>, dst: String, manifest: Manifest) -> HashMap<String
         }
     }
 
-    mushmap
+    manifest
 }
 
 #[allow(dead_code)]

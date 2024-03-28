@@ -63,3 +63,153 @@ macro_rules! style {
         }
     };
 }
+
+/** Colour macros */
+
+#[macro_export]
+macro_rules! black {
+    ($($arg:tt)*) => {
+        style!("black", "{}", format_args!($($arg)*))
+    };
+}
+
+#[macro_export]
+macro_rules! red {
+    ($($arg:tt)*) => {
+        style!("red", "{}", format_args!($($arg)*))
+    };
+}
+
+#[macro_export]
+macro_rules! green {
+    ($($arg:tt)*) => {
+        style!("green", "{}", format_args!($($arg)*))
+    };
+}
+
+#[macro_export]
+macro_rules! yellow {
+    ($($arg:tt)*) => {
+        style!("yellow", "{}", format_args!($($arg)*))
+    };
+}
+
+#[macro_export]
+macro_rules! blue {
+    ($($arg:tt)*) => {
+        style!("blue", "{}", format_args!($($arg)*))
+    };
+}
+
+#[macro_export]
+macro_rules! magenta {
+    ($($arg:tt)*) => {
+        style!("magenta", "{}", format_args!($($arg)*))
+    };
+}
+
+#[macro_export]
+macro_rules! cyan {
+    ($($arg:tt)*) => {
+        style!("cyan", "{}", format_args!($($arg)*))
+    };
+}
+
+/** Logging macros */
+#[macro_export]
+macro_rules! trace {
+    ($($arg:tt)*) => {
+        if cfg!(feature = "log") {
+            let log = std::env::var("RUST_LOG").unwrap_or(String::from("info"));
+            println!("log = {}", log);
+            if log.contains("trace") {
+                println!("{}{}", style!("dim,magenta", "[TRACE] "), style!("dim,white", "{}", format_args!($($arg)*)));
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! debug {
+    ($($arg:tt)*) => {
+        if cfg!(feature = "log") {
+            let log = std::env::var("RUST_LOG").unwrap_or(String::from("info"));
+            if log.contains("debug") || log.contains("trace") {
+                println!("{}{}", style!("magenta", "[DEBUG] "), style!("dim,white", "{}", format_args!($($arg)*)));
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! info {
+    ($($arg:tt)*) => {
+        if cfg!(feature = "log") {
+            let log = std::env::var("RUST_LOG").unwrap_or(String::from("info"));
+            if log.contains("info") || log.contains("debug") || log.contains("trace") {
+                println!("{}{}", style!("cyan", "[INFO] "), format_args!($($arg)*));
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! warning {
+    ($($arg:tt)*) => {
+        if cfg!(feature = "log") {
+            let log = std::env::var("RUST_LOG").unwrap_or(String::from("info"));
+            if log.contains("warning") || log.contains("info") || log.contains("debug") || log.contains("trace") {
+                println!("{}{}", style!("yellow", "[WARN] "), format_args!($($arg)*));
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! error {
+    ($($arg:tt)*) => {
+        if cfg!(feature = "log") {
+            let log = std::env::var("RUST_LOG").unwrap_or(String::from("info"));
+            if log.contains("error") || log.contains("warning") || log.contains("info") || log.contains("debug") || log.contains("trace") {
+                println!("{}{}", style!("red", "[ERROR] "), format_args!($($arg)*));
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! failure {
+    ($($arg:tt)*) => {
+        if cfg!(feature = "log") {
+            println!("{}{}", style!("red", "[FAILURE] "), format_args!($($arg)*));
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! success {
+    ($($arg:tt)*) => {
+        if cfg!(feature = "log") {
+            println!("{}{}", style!("green", "[SUCCESS] "), format_args!($($arg)*));
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! note {
+    ($($arg:tt)*) => {
+        if cfg!(feature = "log") {
+            let log = std::env::var("RUST_LOG").unwrap_or(String::from("info"));
+            if log.contains("note") {
+                println!("{}{}", style!("dim,blue", "[NOTE] "), style!("dim,white", "{}", format_args!($($arg)*)));
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! msg {
+    ($($arg:tt)*) => {
+        println!("{}", format_args!($($arg)*));
+    };
+}
