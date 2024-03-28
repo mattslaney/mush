@@ -64,14 +64,34 @@ impl MushAction {
     }
 }
 
-pub fn scan(src: Vec<String>, dst: String, manifest_filename: String) {
-    let mut hashmap: HashMap<String, PathBuf> = HashMap::new();
+pub struct MushLink {
+    action: MushAction,
+    hash: String,
+    src: String,
+    dst: String,
+}
 
-    let mut manifest = std::fs::File::create(manifest_filename)
-                .expect("Could not create manifest file");
+fn write_to_manifest(action: MushAction, hash: &str, src: &str, dst: &str, manifest: &mut Option<File>) {
+    if let Err(e) = writeln!(manifest.as_mut().unwrap(),"{},{},{},{}", action.to_string(), hash, src, dst) {
+        eprintln!("Failed to write to duplicates file: {}", e);
+    }
+}
 
-    if let Err(e) = writeln!(manifest, "action,hash,src,dst") {
-        eprintln!("Error: {}", e);
+pub fn scan(src: Vec<String>, dst: String, manifest_filename: Option<String>) -> HashMap<String, MushLink> {
+    let mut mushmap: HashMap<String, MushLink> = HashMap::new();
+
+    let mut manifest = match &manifest_filename {
+        Some(m) => Some(
+            std::fs::File::create(m)
+                .expect("Could not create manifest file"),
+        ),
+        None => None,
+    };
+
+    if manifest_filename.is_some() {
+        if let Err(e) = writeln!(manifest.as_ref().unwrap(), "action,hash,src,dst") {
+            eprintln!("Error: {}", e);
+        }
     }
 
     let mut i = 0;
@@ -102,48 +122,29 @@ pub fn scan(src: Vec<String>, dst: String, manifest_filename: String) {
                 let _created_date = file.metadata().unwrap().created().unwrap();
                 let _modified_date = file.metadata().unwrap().modified().unwrap();
 
-                if hashmap.contains_key(&hash) {
+                if mushmap.contains_key(&hash) {
                     print!("Possible duplicate: ");
-                    let orig = hashmap.get(&hash).unwrap();
+                    let orig = mushmap.get(&hash).unwrap();
 
                     //Get orig created date & modified date
-                    let orig_path = orig;
-                    let orig_string = orig_path.to_str().unwrap();
-                    let orig_metadata = std::fs::metadata(orig_path).unwrap();
+                    let orig_metadata = std::fs::metadata(&orig.src).unwrap();
                     let _orig_created = orig_metadata.created().unwrap();
                     let _orig_modified = orig_metadata.modified().unwrap();
 
                     //Do a bit by bit file comparison
-                    if compare_files(&src_file, orig) {
+                    let dup_file = std::path::PathBuf::from(&src_file);
+                    if compare_files(&src_file, &dup_file) {
                         println!(
                             "{}: {} (same as {})",
                             style!("yellow", "{}", "Skipped"),
                             src_path_string,
-                            orig_string
+                            orig.src
                         );
-                            if let Err(e) = writeln!(
-                                manifest,
-                                "{},{},{},{}",
-                                MushAction::Skip.to_string(),
-                                hash,
-                                src_path_string,
-                                orig_string
-                            ) {
-                                eprintln!("Failed to write to duplicates file: {}", e);
-                            }
+                        write_to_manifest(MushAction::Skip, &hash[..], &src_path_string[..], &orig.dst[..], &mut manifest);
                     } else {
                         let s_path = style!("yellow", "{}/{}", src_parent_dir, src_file_name);
-                        println!("Collision detected: {} {})", s_path, orig_string);
-                            if let Err(e) = writeln!(
-                                manifest,
-                                "{},{},{},{}",
-                                MushAction::Collision.to_string(),
-                                hash,
-                                src_path_string,
-                                orig_string
-                            ) {
-                                eprintln!("Failed to write to duplicates file: {}", e);
-                            }
+                        println!("Collision detected: {} {})", s_path, orig.src);
+                        write_to_manifest(MushAction::Collision, &hash[..], &src_path_string[..], &orig.dst[..], &mut manifest);
                     }
                 } else {
                     let dst_path_string =
@@ -152,21 +153,20 @@ pub fn scan(src: Vec<String>, dst: String, manifest_filename: String) {
                     // let s_hash = style!("dim,white", "{}", &hash);
                     // println!("NEW: {}: {}", s_path, s_hash);
 
-                        if let Err(e) = writeln!(
-                            manifest,
-                            "{},{},{},{}",
-                            MushAction::Add.to_string(),
-                            &hash,
-                            &src_path_string,
-                            &dst_path_string
-                        ) {
-                            eprintln!("Failed to write to manifest file: {}", e);
-                        }
-                    hashmap.insert(hash.to_owned(), src_file);
+                    write_to_manifest(MushAction::Add, &hash[..], &src_path_string[..], &dst_path_string[..], &mut manifest);
+                    let mushlink = MushLink {
+                        action: MushAction::Add,
+                        hash: hash.to_owned(),
+                        src: src_path_string.to_owned(),
+                        dst: dst_path_string.to_owned(),
+                    };
+                    mushmap.insert(hash.to_owned(), mushlink);
                 }
             }
         }
     }
+
+    mushmap
 }
 
 #[allow(dead_code)]
@@ -257,7 +257,7 @@ fn compare_files(file1: &PathBuf, file2: &PathBuf) -> bool {
 }
 
 #[allow(dead_code, unused_variables)]
-pub fn push(manifest: &String, mode: MushMode) {
+pub fn push(manifest: &String, dst: Option<String>, mode: MushMode) {
     let manifest_file = File::open(manifest).expect(&format!(
         "{}: Could not open file: {}",
         style!("red", "ERROR"),

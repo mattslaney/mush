@@ -11,7 +11,7 @@ use mush::{scan, push};
 #[command(version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
-    command: Option<Commands>
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
@@ -25,14 +25,41 @@ enum Commands {
         #[arg(short, long, value_name = "MANIFEST_FILE", default_value = "manifest.mush")]
         manifest: String
     },
-    /// Move/Copy files from src(s) to dst with provided manifest
+    /// Perform file mush
+    Run {
+        /// From provided manifest
+        #[arg(short, long, value_name = "MANIFEST_FILE", default_value = "manifest.mush", required = true)]
+        manifest: Option<String>,
+        /// From one or more source directories
+        #[arg(short, long, value_name = "PATH", num_args = 1..,value_delimiter = ' ')]
+        src: Option<Vec<String>>,
+        /// To this destination
+        #[arg(short, long, value_name = "PATH")]
+        dst: Option<String>,
+        /// Move or Copy to the destination
+        #[arg(long)]
+        mode: MushMode,
+    },
+    /// Push from current directory to a destination directory
     Push {
-        #[arg(short, long, value_name = "MANIFEST_FILE", default_value = "manifest.mush")]
-        manifest: String,
+        /// Destination folder
+        #[arg(short, long, value_name = "PATH")]
+        dst: String,
+        /// Move or Copy to the destination
         #[arg(long)]
-        copy: bool,
+        mode: MushMode,
+    },
+    /// Pull files from one or more source directories to current directory
+    Pull {
+        /// One or more source directories
+        #[arg(short, long, value_name = "PATH", num_args = 1..,value_delimiter = ' ')]
+        src: Vec<String>,
+        /// Destination folder
+        #[arg(short, long, value_name = "PATH")]
+        dst: Option<String>,
+        /// Move or Copy to the destination
         #[arg(long)]
-        move_: bool
+        mode: MushMode,
     }
 }
 
@@ -41,19 +68,24 @@ fn main() {
 
     match cli.command {
         Some(Commands::Scan { src, dst, manifest }) => {
-            scan(src, dst, manifest);
+            scan(src, dst, Some(manifest));
         }
-        Some(Commands::Push { manifest, copy, move_ }) => {
-            if copy && move_ {
-                panic!("Cannot copy and move at the same time");
-            }
-
-            if copy {
-                push(&manifest, MushMode::Copy);
-            }
-            if move_ {
-                push(&manifest, MushMode::Move);
-            }
+        Some(Commands::Run { manifest, src, dst, mode }) => {
+            todo!("Run not implemented yet");
+            // if let Some(manifest) = manifest {
+            //     push(&manifest, mode);
+            // } else {
+            //     panic!("No manifest provided");
+            // }
+        }
+        Some(Commands::Push { dst, mode }) => {
+            todo!("Push not implemented yet");
+            // let src = vec![std::env::current_dir().unwrap().to_str().unwrap().to_string()];
+            // let map = scan(src, dst, None);
+            // push(None, mode);
+        },
+        Some(Commands::Pull { src, dst, mode }) => {
+            todo!("Pull not implemented yet");
         }
         None => {}
     }
