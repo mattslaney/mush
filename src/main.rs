@@ -31,9 +31,11 @@ enum Commands {
         clear_cache: bool,
     },
     /// Show the changes that need to be synced
-    Status,
-    /// Show a tree of all files
-    Tree,
+    Status {
+        #[arg(long)]
+        /// Show a tree of all files
+        tree: bool,
+    },
     /// Push all files up to the destination
     Push {
         #[arg(long)]
@@ -71,21 +73,21 @@ fn main() -> Result<(), Box<dyn Error>> {
             };
             println!("Source sync directory initialised");
         }
-        Some(Commands::Status) => {
+        Some(Commands::Status {tree}) => {
             println!("Status");
-            if let Err(e) = mush::sync::status() {
-                eprint!("Failed to get status: {e}");
+            if *tree {
+                mush::sync::tree().expect("Failed to show tree");
+            } else {
+                if let Err(e) = mush::sync::status() {
+                    eprint!("Failed to get status: {e}");
+                }
             }
-        }
-        Some(Commands::Tree) => {
-            println!("Tree");
-            mush::sync::tree().expect("Failed to show tree");
         }
         Some(Commands::Push { force }) => {
             mush::sync::push(force).expect("Failed to push changes to destination");
         }
         Some(Commands::Pull { force }) => {
-            mush::sync::push(force).expect("Failed to pull changes to destination");
+            mush::sync::pull(force).expect("Failed to pull changes to destination");
         }
         Some(Commands::Config { dst }) => {
             match dst {
@@ -97,7 +99,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 None => {
                     println!(
                         "{}",
-                        mush::config::get_cfg_dst_dir().expect("Could not get dest")
+                        mush::config::get_cfg_dst_dir()
                     );
                 }
             };

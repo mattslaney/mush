@@ -1,35 +1,103 @@
 pub mod sync {
     use crate::filesystem::*;
     use std::error::Error;
-    use std::path::PathBuf;
+    use std::io::{self, Read};
+    use std::path::{Path, PathBuf};
 
     pub fn run() -> Result<(), Box<dyn Error>> {
-        let files_to_sync = crate::filesystem::get_file_sync_list();
-        for file in files_to_sync {
-            let (file_path, file_action) = file;
-            match file_action {
-                FileAction::CREATE => {
-                    move_file(&file_path, None);
-                    update_file_hash(&file_path.to_path_buf());
-                }
-                FileAction::UPDATE => {
-                    move_file(&file_path, None);
-                    update_file_hash(&file_path.to_path_buf());
-                }
-                FileAction::DELETE => {
-                    let dst_file = path_src_to_dst(&file_path);
-                    delete_file(&dst_file);
-                    remove_obj_file(&file_path);
-                }
-            }
+        let mode = crate::config::get_mode();
+        if mode == String::from("bidirectional") {
+            bidirectional_sync();
+        } else {
+            mirror_sync();
         }
+        // let files_to_sync = crate::filesystem::get_file_sync_list();
+        // for file in files_to_sync {
+        //     let (file_path, file_action) = file;
+        //     match file_action {
+        //         FileAction::CREATE => {
+        //             move_file(&file_path, None);
+        //             update_file_hash(&file_path.to_path_buf());
+        //         }
+        //         FileAction::UPDATE => {
+        //             move_file(&file_path, None);
+        //             update_file_hash(&file_path.to_path_buf());
+        //         }
+        //         FileAction::DELETE => {
+        //             let dst_file = path_src_to_dst(&file_path);
+        //             delete_file(&dst_file);
+        //             remove_obj_file(&file_path);
+        //         }
+        //         _ => {}
+        //     }
+        // }
         Ok(())
     }
 
+    struct SyncMap {
+        src_path: PathBuf,
+        dst_path: PathBuf,
+        action: FileAction,
+    }
+
+    fn bidirectional_sync() {
+        let src_dir: String = crate::config::get_cfg_src_dir();
+        let dst_dir: String = crate::config::get_cfg_dst_dir();
+        let src_files:Vec<PathBuf> = get_all_files(&src_dir);
+        let dst_files:Vec<PathBuf> = get_all_files(&dst_dir);
+        let mut sync_list: Vec<SyncMap> = Vec::new();
+        let mut rel_paths: Vec<&Path> = src_files
+            .iter()
+            .map(|src_file| src_file.strip_prefix(&src_dir).unwrap())
+            .collect();
+        let dst_rel_paths: Vec<&Path> = dst_files
+            .iter()
+            .map(|dst_file| dst_file.strip_prefix(&dst_dir).unwrap())
+            .collect();
+        rel_paths.extend(&dst_rel_paths);
+        rel_paths.dedup();
+
+        for rel_path in rel_paths {
+            //let rel_path = src_file
+            //    .strip_prefix(&src_dir)
+            //    .expect("Could not string prefix");
+            let src_file_str = format!("{src_dir}/{}", rel_path.to_str().unwrap());
+            let src_file = Path::new(&src_file_str).to_path_buf();
+            let dst_file_str = format!("{dst_dir}/{}", rel_path.to_str().unwrap());
+            let dst_file = Path::new(&dst_file_str).to_path_buf();
+            let src_file_checksum = match src_file.exists() {
+                true => Some(get_checksum(&src_file)),
+                false => None
+            };
+            let dst_file_checksum = match dst_file.exists() {
+                true => Some(get_checksum(&src_file)),
+                false => None
+            };
+
+            // if src_file_checksum != dst_file_checksum {
+            //     println!(
+            //         "{:?} src:{}:{:?} <--> dst:{}:{:?}",
+            //         String::from(rel_path.to_string_lossy()),
+            //         src_file_checksum,
+            //         src_file.metadata().unwrap().modified().unwrap().elapsed(),
+            //         dst_file_checksum,
+            //         dst_file.metadata().unwrap().modified().unwrap().elapsed(),
+            //     );
+            // }
+        }
+    }
+
+    fn mirror_sync() {
+        let src_dir = crate::config::get_cfg_src_dir();
+        let dst_dir = crate::config::get_cfg_dst_dir();
+        let src_files = get_all_files(&src_dir);
+        let dst_files = get_all_files(&dst_dir);
+    }
+
     pub fn tree() -> Result<(), Box<dyn Error>> {
-        let src_dir = crate::config::get_cfg_src_dir().unwrap();
+        let src_dir = crate::config::get_cfg_src_dir();
         let ignore_file = crate::config::get_ignore_file().unwrap().unwrap();
-        let files = crate::filesystem::print_tree(src_dir, &ignore_file, String::from(""));
+        crate::filesystem::print_tree(src_dir, &ignore_file, String::from(""));
         Ok(())
     }
 
@@ -45,6 +113,7 @@ pub mod sync {
                 FileAction::CREATE => c.push(file_path),
                 FileAction::UPDATE => u.push(file_path),
                 FileAction::DELETE => d.push(file_path),
+                _ => {}
             }
         }
 
@@ -72,10 +141,32 @@ pub mod sync {
     }
 
     pub fn push(force: &bool) -> Result<(), Box<dyn Error>> {
+        if !force {
+            println!("Are you sure you want to push all files to the destination?");
+            let mut buffer = String::new();
+            io::stdin().read_line(&mut buffer)?;
+            if buffer.starts_with("y") {
+                //Do nothing, continue
+            } else {
+                return Ok(());
+            }
+        }
+        print!("Pushing all tracked files to the destination");
         Ok(())
     }
 
     pub fn pull(force: &bool) -> Result<(), Box<dyn Error>> {
+        if !force {
+            println!("Are you sure you want to pull all files from the destination?");
+            let mut buffer = String::new();
+            io::stdin().read_line(&mut buffer)?;
+            if buffer.starts_with("y") {
+                //Do nothing, continue
+            } else {
+                return Ok(());
+            }
+        }
+        print!("Pulling all tracked files from destination");
         Ok(())
     }
 }
@@ -107,6 +198,7 @@ mod filesystem {
     }
 
     pub fn print_tree(src_dir: String, ignore_file: &String, prefix: String) {
+        let sync_list = get_file_sync_list();
         let mut builder = WalkBuilder::new(&src_dir);
         builder.hidden(false);
         builder.ignore(false);
@@ -127,22 +219,33 @@ mod filesystem {
             if String::from(pb.to_str().unwrap()) == src_dir {
                 continue;
             }
+            let action = match sync_list.contains_key(&pb) {
+                true => match sync_list.get(&pb).unwrap() {
+                    FileAction::CREATE => "[+]",
+                    FileAction::UPDATE => "[>]",
+                    FileAction::DELETE => "[-]",
+                    FileAction::NONE => "[=]",
+                    _ => "",
+                },
+                false => "",
+            };
+            let name = pb.file_name().unwrap().to_str().unwrap();
             if index == 0 {
-                println!("{}└── {}", prefix, pb.file_name().unwrap().to_str().unwrap());
+                println!("{}└── {} {}", prefix, name, action);
                 if pb.is_dir() {
                     print_tree(
                         String::from(pb.to_str().unwrap()),
                         ignore_file,
-                        format!("{}    ", prefix)
+                        format!("{}    ", prefix),
                     );
                 }
             } else {
-                println!("{}├── {}", prefix, pb.file_name().unwrap().to_str().unwrap());
+                println!("{}├── {} {}", prefix, name, action);
                 if pb.is_dir() {
                     print_tree(
                         String::from(pb.to_str().unwrap()),
                         ignore_file,
-                        format!("{}│   ", prefix)
+                        format!("{}│   ", prefix),
                     );
                 } else {
                 }
@@ -150,12 +253,11 @@ mod filesystem {
         }
     }
 
-    fn get_all_files() -> Vec<PathBuf> {
+    pub fn get_all_files(dir: &String) -> Vec<PathBuf> {
         let mut all_files = Vec::<PathBuf>::new();
-        let src_dir = crate::config::get_cfg_src_dir().unwrap();
         let ignore_file = config::get_ignore_file().unwrap().unwrap();
 
-        let mut builder = WalkBuilder::new(src_dir);
+        let mut builder = WalkBuilder::new(dir);
         builder.hidden(false);
         builder.ignore(false);
         builder.parents(false);
@@ -180,14 +282,14 @@ mod filesystem {
     //TODO::
     #[allow(dead_code)]
     fn get_src_rel_path(path: &PathBuf) -> PathBuf {
-        let root_dir = config::get_cfg_src_dir().unwrap();
+        let root_dir = config::get_cfg_src_dir();
         path.strip_prefix(root_dir)
             .expect("Could not get relative path to source dir")
             .to_path_buf()
     }
 
     fn get_src_rel_path_str(path: &Path) -> String {
-        path.strip_prefix(config::get_cfg_src_dir().unwrap())
+        path.strip_prefix(config::get_cfg_src_dir())
             .unwrap()
             .as_os_str()
             .to_str()
@@ -269,16 +371,19 @@ mod filesystem {
         CREATE,
         UPDATE,
         DELETE,
+        NONE,
+        IGNORE,
     }
 
     pub fn get_file_sync_list() -> HashMap<PathBuf, FileAction> {
-        let mut changed_files = HashMap::<PathBuf, FileAction>::new();
+        let mut sync_list = HashMap::<PathBuf, FileAction>::new();
         let mut tracked_files = get_all_file_object_map();
+        let src_dir = crate::config::get_cfg_src_dir();
 
-        get_all_files().iter().for_each(|f| {
+        get_all_files(&src_dir).iter().for_each(|f| {
             let rel_path_hash = get_src_rel_path_hash(f.as_path());
             //let file_name = String::from(f.file_name().unwrap().to_string_lossy());
-            let new_checksum = get_file_hash(f.to_path_buf()).unwrap();
+            let new_checksum = get_checksum(&f.to_path_buf());
 
             //Compare checksums if available
             let obj_path = format!("{}/objects/{}", config::get_cfg_dir_str(), rel_path_hash);
@@ -289,27 +394,29 @@ mod filesystem {
                     let prev_checksum = file_obj.checksum.parse::<u64>().unwrap();
                     if prev_checksum != new_checksum {
                         //println!("Updated file: {}: {}", file_name, new_checksum);
-                        changed_files.insert(f.to_path_buf(), FileAction::UPDATE);
+                        sync_list.insert(f.to_path_buf(), FileAction::UPDATE);
+                    } else {
+                        sync_list.insert(f.to_path_buf(), FileAction::NONE);
                     }
                     tracked_files.remove(&rel_path_hash.to_string());
                 }
                 false => {
                     //println!("New file: {}: {}", file_name, new_checksum);
-                    changed_files.insert(f.to_path_buf(), FileAction::CREATE);
+                    sync_list.insert(f.to_path_buf(), FileAction::CREATE);
                 }
             }
         });
 
         //Files to delete
         for (_, src_file) in &tracked_files {
-            let root_dir = get_cfg_src_dir().unwrap();
+            let root_dir = get_cfg_src_dir();
             let src_path_str = format!("{}/{}", root_dir, src_file);
             let src_path = std::path::Path::new(&src_path_str);
             //println!("Deleted file: {:?}", src_path);
-            changed_files.insert(src_path.to_path_buf(), FileAction::DELETE);
+            sync_list.insert(src_path.to_path_buf(), FileAction::DELETE);
         }
 
-        changed_files
+        sync_list
     }
 
     fn get_seahash<R: Read>(mut reader: R) -> Result<u64, Box<dyn Error>> {
@@ -325,11 +432,11 @@ mod filesystem {
         Ok(hasher.finish())
     }
 
-    fn get_file_hash(path: PathBuf) -> Result<u64, Box<dyn Error>> {
-        let input = File::open(path)?;
+    pub fn get_checksum(path: &PathBuf) -> u64 {
+        let input = File::open(path).expect("Could not open file");
         let reader = BufReader::new(input);
-        let hash = get_seahash(reader)?;
-        Ok(hash)
+        let hash = get_seahash(reader).expect("Could not calculate checksum");
+        hash
     }
 
     pub fn update_file_hash(path: &PathBuf) {
@@ -350,7 +457,7 @@ mod filesystem {
             .unwrap()
             .elapsed()
             .unwrap();
-        let new_checksum = get_file_hash(path.to_path_buf()).unwrap();
+        let new_checksum = get_checksum(&path.to_path_buf());
 
         let file_obj = FileObject {
             file_name,
@@ -372,9 +479,9 @@ mod filesystem {
     }
 
     pub fn path_src_to_dst(src_file: &PathBuf) -> PathBuf {
-        let root_dir = config::get_cfg_src_dir().unwrap();
+        let root_dir = config::get_cfg_src_dir();
         let rel_path = src_file.strip_prefix(&root_dir).unwrap().to_str().unwrap();
-        let dst_dir = config::get_cfg_dst_dir().unwrap();
+        let dst_dir = config::get_cfg_dst_dir();
         let dst_file = format!("{}/{}", dst_dir, rel_path);
         std::path::Path::new(dst_file.as_str()).to_path_buf()
     }
@@ -551,15 +658,15 @@ pub mod config {
         dot_folder
     }
 
-    pub fn get_cfg_src_dir() -> Result<String, Box<dyn Error>> {
-        let cfg = get_cfg()?;
-        Ok(cfg.core.src)
+    pub fn get_cfg_src_dir() -> String {
+        let cfg = get_cfg().expect("Could not get config");
+        cfg.core.src
     }
 
-    pub fn get_cfg_dst_dir() -> Result<String, Box<dyn Error>> {
-        let cfg = get_cfg()?;
+    pub fn get_cfg_dst_dir() -> String {
+        let cfg = get_cfg().expect("Could not get config");
         let dst_dir = cfg.core.dst.expect("No destination directory setup");
-        Ok(dst_dir)
+        dst_dir
     }
 
     pub fn cfg_set_dst(dst: String) -> Result<(), Box<dyn Error>> {
@@ -575,6 +682,11 @@ pub mod config {
     pub fn get_ignore_file() -> Result<Option<String>, Box<dyn Error>> {
         let cfg = get_cfg()?;
         Ok(cfg.core.ignore_file)
+    }
+
+    pub fn get_mode() -> String {
+        let cfg = get_cfg().expect("Could not get config file");
+        cfg.core.mode
     }
 
     pub fn get_ignore_patterns() -> Result<Vec<String>, Box<dyn Error>> {
