@@ -1,6 +1,8 @@
+use std::collections::HashMap;
+
 use clap::{Parser, Subcommand};
 
-use mush::MushMode;
+use mush::{MushLink, MushMode};
 use mush::{scan, push};
 
 /**
@@ -68,10 +70,26 @@ fn main() {
 
     match cli.command {
         Some(Commands::Scan { src, dst, manifest }) => {
-            scan(src, dst, Some(manifest));
+            let file = std::fs::File::create(manifest).expect("Could not create manifest file");
+            let manifest = mush::Manifest::File(file);
+            scan(src, dst, manifest);
         }
         Some(Commands::Run { manifest, src, dst, mode }) => {
-            todo!("Run not implemented yet");
+            match manifest {
+                Some(manifest) => {
+                    let file = std::fs::File::create(manifest).expect("Could not create manifest file");
+                    let manifest = mush::Manifest::File(file);
+                    //scan(src, dst, manifest);
+                },
+                None => {
+                    if src.is_none() || dst.is_none() {
+                        panic!("Must provide both src and dst");
+                    }
+                    let manifest = mush::Manifest::Map(HashMap::<String, MushLink>::new());
+                    scan(src.unwrap(), dst.unwrap(), manifest);
+                }
+            }
+            todo!("Run not fully implemented yet");
             // if let Some(manifest) = manifest {
             //     push(&manifest, mode);
             // } else {
@@ -79,9 +97,10 @@ fn main() {
             // }
         }
         Some(Commands::Push { dst, mode }) => {
-            todo!("Push not implemented yet");
-            // let src = vec![std::env::current_dir().unwrap().to_str().unwrap().to_string()];
-            // let map = scan(src, dst, None);
+            let src = vec![std::env::current_dir().unwrap().to_str().unwrap().to_string()];
+            let manifest = mush::Manifest::Map(HashMap::<String, MushLink>::new());
+            scan(src, dst, manifest);
+            todo!("Push not fully implemented yet");
             // push(None, mode);
         },
         Some(Commands::Pull { src, dst, mode }) => {

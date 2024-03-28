@@ -27,6 +27,7 @@ impl std::fmt::Display for MushActionError {
     }
 }
 
+#[derive(Clone)]
 pub enum MushAction {
     Add,       //[+] Add new file to dest
     Remove,    //[-] Remove file from dest
@@ -64,6 +65,12 @@ impl MushAction {
     }
 }
 
+pub enum Manifest {
+    File(File),
+    Map(HashMap<String, MushLink>),
+}
+
+#[derive(Clone)]
 pub struct MushLink {
     action: MushAction,
     hash: String,
@@ -71,26 +78,38 @@ pub struct MushLink {
     dst: String,
 }
 
-fn write_to_manifest(action: MushAction, hash: &str, src: &str, dst: &str, manifest: &mut Option<File>) {
-    if let Err(e) = writeln!(manifest.as_mut().unwrap(),"{},{},{},{}", action.to_string(), hash, src, dst) {
+fn write_to_manifest(
+    action: MushAction,
+    hash: &str,
+    src: &str,
+    dst: &str,
+    mut file: &File,
+) {
+    if let Err(e) = writeln!(
+        file,
+        "{},{},{},{}",
+        action.to_string(),
+        hash,
+        src,
+        dst
+    ) {
         eprintln!("Failed to write to duplicates file: {}", e);
     }
 }
 
-pub fn scan(src: Vec<String>, dst: String, manifest_filename: Option<String>) -> HashMap<String, MushLink> {
+pub fn scan(src: Vec<String>, dst: String, manifest: Manifest) -> HashMap<String, MushLink> {
     let mut mushmap: HashMap<String, MushLink> = HashMap::new();
 
-    let mut manifest = match &manifest_filename {
-        Some(m) => Some(
-            std::fs::File::create(m)
-                .expect("Could not create manifest file"),
-        ),
-        None => None,
-    };
-
-    if manifest_filename.is_some() {
-        if let Err(e) = writeln!(manifest.as_ref().unwrap(), "action,hash,src,dst") {
-            eprintln!("Error: {}", e);
+    match manifest {
+        Manifest::File(ref file) => {
+            println!("{}", style!("cyan", "Scanning to mush manifest file..."));
+            let mut file = file;
+            if let Err(e) = writeln!(file, "action,hash,src,dst") {
+                eprintln!("Error: {}", e);
+            }
+        }
+        Manifest::Map(_) => {
+            println!("{}", style!("cyan", "Scanning to mush manifest map..."));
         }
     }
 
@@ -140,11 +159,37 @@ pub fn scan(src: Vec<String>, dst: String, manifest_filename: Option<String>) ->
                             src_path_string,
                             orig.src
                         );
-                        write_to_manifest(MushAction::Skip, &hash[..], &src_path_string[..], &orig.dst[..], &mut manifest);
+                        match manifest {
+                            Manifest::File(ref file) => {
+                                write_to_manifest(
+                                    MushAction::Skip,
+                                    &hash[..],
+                                    &src_path_string[..],
+                                    &orig.dst[..],
+                                    &file,
+                                );
+                            }
+                            Manifest::Map(_) => {
+                                todo!("Might change manifest to vec instead of map - can warn user of skipped files");
+                            }
+                        }
                     } else {
                         let s_path = style!("yellow", "{}/{}", src_parent_dir, src_file_name);
                         println!("Collision detected: {} {})", s_path, orig.src);
-                        write_to_manifest(MushAction::Collision, &hash[..], &src_path_string[..], &orig.dst[..], &mut manifest);
+                        match manifest {
+                            Manifest::File(ref file) => {
+                                write_to_manifest(
+                                    MushAction::Collision,
+                                    &hash[..],
+                                    &src_path_string[..],
+                                    &orig.dst[..],
+                                    &file,
+                                );
+                            }
+                            Manifest::Map(_) => {
+                                todo!("Might change manifest to vec instead of map - can prompt user for collisions");
+                            }
+                        }
                     }
                 } else {
                     let dst_path_string =
@@ -153,13 +198,29 @@ pub fn scan(src: Vec<String>, dst: String, manifest_filename: Option<String>) ->
                     // let s_hash = style!("dim,white", "{}", &hash);
                     // println!("NEW: {}: {}", s_path, s_hash);
 
-                    write_to_manifest(MushAction::Add, &hash[..], &src_path_string[..], &dst_path_string[..], &mut manifest);
                     let mushlink = MushLink {
                         action: MushAction::Add,
                         hash: hash.to_owned(),
                         src: src_path_string.to_owned(),
                         dst: dst_path_string.to_owned(),
                     };
+
+                    match manifest {
+                        Manifest::File(ref file) => {
+                            write_to_manifest(
+                                MushAction::Add,
+                                &hash[..],
+                                &src_path_string[..],
+                                &dst_path_string[..],
+                                    file
+                            );
+                        }
+                        Manifest::Map(mut map) => {
+                            map.insert(hash.to_owned(), mushlink.clone());
+                            todo!("Might change manifest to vec instead of map - can warn user of skipped files");
+                        }
+                    }
+
                     mushmap.insert(hash.to_owned(), mushlink);
                 }
             }
